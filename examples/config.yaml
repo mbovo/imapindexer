@@ -1,0 +1,14 @@
+imap:
+  address: imap.server.tld:993
+  username: user@server.tld
+  password: imap_password
+  mailbox: INBOX
+zinc:
+  password: Complexpass#123
+  username: admin
+  address: http://localhost:4080
+  index: mail_index
+indexer:
+  batch: 100
+  queue: 100
+  workers: 10
