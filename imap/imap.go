@@ -45,7 +45,10 @@ func GetMails(messages chan *types.Message, config ImapConfig) {
 	defer c.Close()
 
 	// Login
-	c.Login(config.Username, config.Password)
+	logincmd := c.Login(config.Username, config.Password)
+	if e := logincmd.Wait(); e != nil {
+		log.Fatal().Err(e).Msg("cannot login to IMAP server")
+	}
 	defer c.Logout()
 
 	listCmd := c.List("", config.MailBoxPattern, &imap.ListOptions{

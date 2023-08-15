@@ -88,7 +88,7 @@ func (z *Zinc) IndexMails(ctx context.Context) {
 		// 	continue
 		// }
 
-		resp, _, err := z.client.Document.Index(ctx, z.config.Index).Document(document).Execute()
+		resp, _, err := z.client.Document.IndexWithID(ctx, z.config.Index, msg.Hash).Document(document).Execute()
 		if err != nil {
 			log.Error().Err(err).Msg("failed to index document")
 			continue
