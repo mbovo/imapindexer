@@ -2,6 +2,8 @@
 
 A simple cli tool to index IMAP mailboxes into a ZincSearch / Elasticsearch.
 
+[![asciicast](https://asciinema.org/a/T09JMxz2qxDqMU6oh73QGBx0c.svg)](https://asciinema.org/a/T09JMxz2qxDqMU6oh73QGBx0c)
+
 ## Usage
 
 ```
