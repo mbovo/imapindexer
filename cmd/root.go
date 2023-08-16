@@ -68,7 +68,8 @@ func init() {
 	// Cobra supports persistent flags, which, if defined here,
 	// will be global for your application.
 
-	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.imapindexer.yaml)")
+	rootCmd.PersistentFlags().BoolP("debug", "d", false, "Enable debug mode")
+	rootCmd.PersistentFlags().StringVarP(&cfgFile, "config", "c", "", "config file (default is $HOME/.imapindexer.yaml)")
 	rootCmd.Flags().String("imap.address", "", "IMAP server address")
 	rootCmd.Flags().String("imap.username", "", "IMAP username")
 	rootCmd.Flags().String("imap.password", "", "IMAP password")
@@ -77,13 +78,13 @@ func init() {
 	rootCmd.Flags().String("zinc.username", "", "ZincSearch username")
 	rootCmd.Flags().String("zinc.password", "", "ZincSearch password")
 	rootCmd.Flags().String("zinc.index", "mail_index", "ZincSearch index name")
-	rootCmd.Flags().Int("indexer.workers", 1, "Number of workers to use")
-	rootCmd.Flags().Int("indexer.buffer", 100, "Messages buffer size")
-	rootCmd.Flags().Int("indexer.batch", 100, "Batch size")
+	rootCmd.Flags().Int("indexer.workers", 1, "Number of imap workers to use")
+	rootCmd.Flags().Int("indexer.buffer", 100, "Size of buffer for messages channel")
+	rootCmd.Flags().Int("indexer.batch", 100, "Number of message to send to ZincSearch in a single batch")
 
-	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr}).With().Caller().Logger().Level(zerolog.InfoLevel)
+	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr}).With().Logger().Level(zerolog.InfoLevel)
 
-	viper.BindPFlags(rootCmd.Flags())
+	viper.BindPFlags(rootCmd.PersistentFlags())
 }
 
 // initConfig reads in config file and ENV variables if set.

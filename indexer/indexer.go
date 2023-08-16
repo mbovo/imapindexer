@@ -90,8 +90,9 @@ func (z *Zinc) IndexMails(ctx context.Context, wg *sync.WaitGroup) {
 			continue
 		}
 
+		batch = append(batch, document)
+
 		if len(batch) < int(z.config.BatchSize) {
-			batch = append(batch, document)
 			log.Debug().
 				Str("mailbox", msg.MailBox).
 				Str("Subject", msg.Envelope.Subject).
@@ -110,7 +111,7 @@ func (z *Zinc) IndexMails(ctx context.Context, wg *sync.WaitGroup) {
 			log.Error().Err(err).Msg("failed to index document")
 			continue
 		}
-		log.Info().Str("mailbox", msg.MailBox).
+		log.Info().
 			Int32("count", resp.GetRecordCount()).
 			Int("batch", len(batch)).
 			Msg("Indexed")

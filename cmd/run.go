@@ -18,18 +18,24 @@ package cmd
 
 import (
 	"context"
+	"os"
 	"sync"
 
 	"github.com/mbovo/imapindexer/imap"
 	"github.com/mbovo/imapindexer/indexer"
 	"github.com/mbovo/imapindexer/types"
+	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/viper"
 )
 
 func run() {
 
+	if viper.GetBool("debug") {
+		log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr}).With().Caller().Logger().Level(zerolog.DebugLevel)
+	}
 	log.Info().Msg("Starting imapindexer")
+	log.Debug().Msg("Debug mode enabled")
 	log.Info().Fields(viper.AllSettings()["indexer"]).Msg("Indexer settings")
 
 	messages := make(chan *types.Message, viper.GetInt("imap.buffer"))
