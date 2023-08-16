@@ -78,14 +78,14 @@ func msgToMap(msg *types.Message) map[string]interface{} {
 	return document
 }
 
-func (z *Zinc) IndexMails(ctx context.Context, messages chan *types.Message, wg *sync.WaitGroup) {
+func (z *Zinc) IndexMails(ctx context.Context, messages chan *types.Message, wg *sync.WaitGroup, bar chan int) {
 	var document map[string]interface{}
 	batch := []map[string]interface{}{}
 	log.Debug().Msg("Waiting for messages to index")
 	time.Sleep(time.Second)
 
 	for msg := range messages {
-
+		bar <- 1
 		document = msgToMap(msg)
 		if document == nil {
 			log.Error().Msg("failed to convert message to map")

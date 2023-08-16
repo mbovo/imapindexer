@@ -29,6 +29,7 @@ import (
 
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
+	"github.com/gosuri/uiprogress"
 	"github.com/mbovo/imapindexer/types"
 )
 
@@ -53,7 +54,7 @@ func newClient(config ImapConfig) (*imapclient.Client, error) {
 	return c, err
 }
 
-func GetMails(messages chan *types.Message, wg *sync.WaitGroup, config ImapConfig) {
+func GetMails(messages chan *types.Message, wg *sync.WaitGroup, config ImapConfig, barChan chan int) {
 	defer wg.Done()
 
 	c, err := newClient(config)
@@ -76,9 +77,17 @@ func GetMails(messages chan *types.Message, wg *sync.WaitGroup, config ImapConfi
 	if err != nil {
 		log.Fatal().Err(err).Msg("cannot get mailboxes")
 	}
+	s := len(mboxes)
+	bar := uiprogress.AddBar(s).AppendCompleted().PrependElapsed()
+	bar.PrependFunc(func(b *uiprogress.Bar) string {
+		return fmt.Sprintf("MailBoxes %d/%d", b.Current(), s)
+	})
 
 	log.Info().Int("mailboxes", len(mboxes)).Msg("Mailboxes found")
 	workerCount := viper.GetInt("indexer.workers")
+	if viper.GetBool("progress") {
+		uiprogress.Start()
+	}
 	for {
 		lwg := &sync.WaitGroup{}
 		if len(mboxes) == 0 {
@@ -93,17 +102,22 @@ func GetMails(messages chan *types.Message, wg *sync.WaitGroup, config ImapConfi
 		for i := 0; i < workerCount; i++ {
 			lwg.Add(1)
 			log.Debug().Str("mailbox", mboxes[i].Mailbox).Int("i", i).Int("mboxes", len(mboxes)).Msg("Starting worker")
-			go imapWorker(config, mboxes[i], messages, lwg)
+			barChan <- int(*mboxes[i].Status.NumMessages)
+			go imapWorker(config, mboxes[i], messages, lwg, bar)
 		}
 		// resize mboxes slice
 		mboxes = mboxes[workerCount:]
 		lwg.Wait()
 	}
+	if viper.GetBool("progress") {
+		uiprogress.Stop()
+	}
 	close(messages)
 }
 
-func imapWorker(config ImapConfig, mbox *imap.ListData, messages chan *types.Message, wg *sync.WaitGroup) {
+func imapWorker(config ImapConfig, mbox *imap.ListData, messages chan *types.Message, wg *sync.WaitGroup, bar *uiprogress.Bar) {
 	defer wg.Done()
+	defer bar.Incr()
 
 	c, err := newClient(config)
 	if err != nil {
@@ -126,13 +140,28 @@ func imapWorker(config ImapConfig, mbox *imap.ListData, messages chan *types.Mes
 	c.Select(mbox.Mailbox, nil)
 	fetchCmd := c.Fetch(*seqSet, fetchOptions)
 	defer fetchCmd.Close()
+
 	count := 0
+	tot := int(*mbox.Status.NumMessages)
+	var subBar *uiprogress.Bar
+	if viper.GetBool("progress") && tot > 0 {
+		subBar = uiprogress.AddBar(tot).AppendCompleted().PrependElapsed()
+		subBar.PrependFunc(func(b *uiprogress.Bar) string {
+			return fmt.Sprintf("Messages %d/%d", b.Current(), b.Total)
+		})
+		subBar.AppendFunc(func(b *uiprogress.Bar) string {
+			return fmt.Sprintf("%s", mbox.Mailbox)
+		})
+	}
 	for {
 		msg := fetchCmd.Next()
 		if msg == nil {
 			break
 		}
 		count += 1
+		if viper.GetBool("progress") && subBar != nil {
+			subBar.Incr()
+		}
 		message := &types.Message{}
 		for {
 			iteam := msg.Next()

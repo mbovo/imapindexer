@@ -18,9 +18,11 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"sync"
 
+	"github.com/gosuri/uiprogress"
 	"github.com/mbovo/imapindexer/imap"
 	"github.com/mbovo/imapindexer/indexer"
 	"github.com/mbovo/imapindexer/types"
@@ -31,14 +33,27 @@ import (
 
 func run() {
 
+	log.Info().Msg("Starting imapindexer")
+
 	if viper.GetBool("debug") {
 		log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr}).With().Caller().Logger().Level(zerolog.DebugLevel)
 	}
-	log.Info().Msg("Starting imapindexer")
+
+	l, err := zerolog.ParseLevel(viper.GetString("loglevel"))
+	if err == nil {
+		log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr}).With().Logger().Level(l)
+	}
+
+	if viper.GetBool("progress") {
+		log.Info().Msg("Using Progress bars, disabling logging")
+		log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr}).With().Caller().Logger().Level(zerolog.Disabled)
+	}
+
 	log.Debug().Msg("Debug mode enabled")
 	log.Info().Fields(viper.AllSettings()["indexer"]).Msg("Indexer settings")
 
 	messages := make(chan *types.Message, viper.GetInt("imap.buffer"))
+	barChan := make(chan int, 1)
 
 	zinc, ctx := indexer.NewZinc(context.Background(), indexer.ZincConfig{
 		Address:   viper.GetString("zinc.address"),
@@ -50,14 +65,40 @@ func run() {
 	wg := &sync.WaitGroup{}
 	wg.Add(2)
 
-	go zinc.IndexMails(ctx, messages, wg) // will wait on messages channel for new data and index when ready
+	go zinc.IndexMails(ctx, messages, wg, barChan) // will wait on messages channel for new data and index when ready
+
+	go indexBar(ctx, barChan)
 
 	go imap.GetMails(messages, wg, imap.ImapConfig{
 		Address:        viper.GetString("imap.address"),
 		Username:       viper.GetString("imap.username"),
 		Password:       viper.GetString("imap.password"),
 		MailBoxPattern: viper.GetString("imap.mailbox"),
-	})
+	}, barChan)
 
 	wg.Wait()
+}
+
+func indexBar(ctx context.Context, barChan chan int) {
+	bar := uiprogress.AddBar(1).PrependElapsed().AppendCompleted()
+	//	p := uiprogress.Progress{}
+	//	bar := p.AddBar(1).PrependElapsed().AppendCompleted()
+	bar.PrependFunc(func(b *uiprogress.Bar) string {
+		return fmt.Sprintf("Indexing %d/%d", b.Current(), b.Total)
+	})
+	tot := 1
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case s := <-barChan:
+			if s > 1 {
+				tot += s
+				old := bar.Current()
+				bar.Total = tot
+				bar.Set(old)
+			}
+			bar.Incr()
+		}
+	}
 }

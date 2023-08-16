@@ -17,7 +17,6 @@
 package cmd
 
 import (
-	"fmt"
 	"os"
 
 	"github.com/rs/zerolog"
@@ -44,7 +43,7 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 See <https://www.gnu.org/licenses/>.
 
-Index all emails messages of your IMAP mailboxes and store 
+Index all emails messages of your IMAP mailboxes and store
 them into a ZincSearch/Elasticsearch to made them fully searchable.
 	`,
 	Run: func(cmd *cobra.Command, args []string) {
@@ -69,6 +68,8 @@ func init() {
 	// will be global for your application.
 
 	rootCmd.PersistentFlags().BoolP("debug", "d", false, "Enable debug mode")
+	rootCmd.PersistentFlags().BoolP("progress", "p", false, "Use progress bars")
+	rootCmd.PersistentFlags().StringP("loglevel", "l", "info", "Log level (ignored if debug flag is set)")
 	rootCmd.PersistentFlags().StringVarP(&cfgFile, "config", "c", "", "config file (default is $HOME/.imapindexer.yaml)")
 	rootCmd.Flags().String("imap.address", "", "IMAP server address")
 	rootCmd.Flags().String("imap.username", "", "IMAP username")
@@ -107,6 +108,6 @@ func initConfig() {
 
 	// If a config file is found, read it in.
 	if err := viper.ReadInConfig(); err == nil {
-		fmt.Fprintln(os.Stderr, "Using config file:", viper.ConfigFileUsed())
+		log.Info().Msgf("Using config file: %s", viper.ConfigFileUsed())
 	}
 }
