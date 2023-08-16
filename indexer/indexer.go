@@ -19,6 +19,7 @@ package indexer
 import (
 	"context"
 	"encoding/json"
+	"sync"
 
 	"github.com/mbovo/imapindexer/types"
 	"github.com/rs/zerolog/log"
@@ -32,10 +33,11 @@ type Zinc struct {
 }
 
 type ZincConfig struct {
-	Address  string
-	Username string
-	Password string
-	Index    string
+	Address   string
+	Username  string
+	Password  string
+	Index     string
+	BatchSize int32
 }
 
 func NewZinc(ctx context.Context, buffer chan *types.Message, cfg ZincConfig) (*Zinc, context.Context) {
@@ -59,72 +61,78 @@ func NewZinc(ctx context.Context, buffer chan *types.Message, cfg ZincConfig) (*
 	return z, newCtx
 }
 
-func (z *Zinc) IndexMails(ctx context.Context) {
+func msgToMap(msg *types.Message) map[string]interface{} {
 	document := map[string]interface{}{}
 
-	for msg := range z.buffer {
-		m, _ := msg.JSON()
+	// convert msg to map[string]interface{}
+	m, _ := msg.JSON()
+	err := json.Unmarshal(m, &document)
+	if err != nil {
+		log.Error().Err(err).Msg("failed to unmarshal")
+		return nil
+	}
 
-		err := json.Unmarshal(m, &document)
-		if err != nil {
-			log.Error().Err(err).Msg("failed to unmarshal")
+	// Force id and timestamp for ZincSearch index
+	document["_id"] = msg.Envelope.MessageID
+	document["@timestamp"] = msg.Envelope.Date
+
+	return document
+}
+
+func (z *Zinc) IndexMails(ctx context.Context, wg *sync.WaitGroup) {
+	var document map[string]interface{}
+
+	batch := []map[string]interface{}{}
+	for msg := range z.buffer {
+
+		document = msgToMap(msg)
+		if document == nil {
 			continue
 		}
 
-		// mq := client.NewMetaTermQuery()
-		// mq.SetValue(msg.Hash)
-		// q := client.NewMetaQuery()
-		// q.SetTerm(map[string]client.MetaTermQuery{
-		// 	"hash": *mq,
-		// })
+		if len(batch) < int(z.config.BatchSize) {
+			batch = append(batch, document)
+			log.Debug().
+				Str("mailbox", msg.MailBox).
+				Str("Subject", msg.Envelope.Subject).
+				Uint32("uid", msg.UID).
+				Int("batch", len(batch)).
+				Msg("Enqueue")
+			continue
+		}
 
-		// _, hresp, _ := z.client.Search.Search(ctx, z.config.Index).Query(client.MetaZincQuery{
-		// 	Fields: []string{"hash"},
-		// 	Query:  q,
-		// }).Execute()
-
-		// if hresp.StatusCode == http.StatusOK {
-		// 	log.Info().Str("hash", msg.Hash).Msg("document already present, skipping")
-		// 	continue
-		// }
-
-		resp, _, err := z.client.Document.IndexWithID(ctx, z.config.Index, msg.Hash).Document(document).Execute()
+		a := client.NewMetaJSONIngest()
+		a.SetIndex(z.config.Index)
+		a.SetRecords(batch)
+		resp, _, err := z.client.Document.Bulkv2(ctx).Query(*a).Execute()
+		// resp, _, err := z.client.Document.IndexWithID(ctx, z.config.Index, msg.Hash).Document(document).Execute()
 		if err != nil {
 			log.Error().Err(err).Msg("failed to index document")
 			continue
 		}
-		log.Info().Str("mailbox", msg.MailBox).Str("subject", msg.Envelope.Subject).Str("_id", resp.GetId()).Uint32("uid", msg.UID).Msg("Added")
+		log.Info().Str("mailbox", msg.MailBox).
+			Int32("count", resp.GetRecordCount()).
+			Int("batch", len(batch)).
+			Msg("Indexed")
+		// zeroing batch
+		batch = []map[string]interface{}{}
 	}
+
+	if len(batch) > 0 {
+		// pushing last remaining items
+		a := client.NewMetaJSONIngest()
+		a.SetIndex(z.config.Index)
+		a.SetRecords(batch)
+		resp, _, err := z.client.Document.Bulkv2(ctx).Query(*a).Execute()
+		// resp, _, err := z.client.Document.IndexWithID(ctx, z.config.Index, msg.Hash).Document(document).Execute()
+		if err != nil {
+			log.Error().Err(err).Msg("failed to index document")
+		}
+		log.Info().
+			Int32("count", resp.GetRecordCount()).
+			Int("batch", len(batch)).
+			Msg("Indexed")
+	}
+	log.Info().Msg("No more messages")
+	wg.Done()
 }
-
-// func Setup_index(ctx context.Context, zincClient *client.APIClient, index string, shards, replicas int32, mappings map[string]any) (*string, error) {
-
-// 	_, hresp, err := zincClient.Index.Exists(ctx, index).Execute()
-// 	if err != nil {
-// 		return nil, err
-// 	}
-// 	if hresp.StatusCode == 200 {
-// 		// index exist, do nothing
-// 		return nil, nil
-// 	}
-// 	// index does not exist, create it
-
-// 	md := client.MetaIndexSimple{
-// 		Name:     &index,
-// 		Mappings: mappings,
-// 		Settings: &client.MetaIndexSettings{
-// 			NumberOfShards:   &shards,
-// 			NumberOfReplicas: &replicas,
-// 		},
-// 	}
-
-// 	resp, hresp, err := zincClient.Index.Create(ctx).Data(md).Execute()
-// 	if err != nil {
-// 		return nil, err
-// 	}
-// 	i, ok := resp.GetIndexOk()
-// 	if !ok || hresp.StatusCode != 200 {
-// 		return nil, fmt.Errorf("failed to create index %s", hresp.Status)
-// 	}
-// 	return i, nil
-// }

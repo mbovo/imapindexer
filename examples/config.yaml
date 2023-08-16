@@ -9,6 +9,6 @@ zinc:
   address: http://localhost:4080
   index: mail_index
 indexer:
-  batch: 100
-  queue: 100
+  batch: 50
+  buffer: 100
   workers: 10

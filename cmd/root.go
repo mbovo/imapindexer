@@ -78,10 +78,10 @@ func init() {
 	rootCmd.Flags().String("zinc.password", "", "ZincSearch password")
 	rootCmd.Flags().String("zinc.index", "mail_index", "ZincSearch index name")
 	rootCmd.Flags().Int("indexer.workers", 1, "Number of workers to use")
-	rootCmd.Flags().Int("indexer.queue", 100, "Messages queue size")
+	rootCmd.Flags().Int("indexer.buffer", 100, "Messages buffer size")
 	rootCmd.Flags().Int("indexer.batch", 100, "Batch size")
 
-	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr}).With().Caller().Logger()
+	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr}).With().Caller().Logger().Level(zerolog.InfoLevel)
 
 	viper.BindPFlags(rootCmd.Flags())
 }

@@ -18,6 +18,7 @@ package cmd
 
 import (
 	"context"
+	"sync"
 
 	"github.com/mbovo/imapindexer/imap"
 	"github.com/mbovo/imapindexer/indexer"
@@ -29,23 +30,28 @@ import (
 func run() {
 
 	log.Info().Msg("Starting imapindexer")
-	log.Info().Fields(viper.AllSettings()).Msg("Configuration")
+	log.Info().Fields(viper.AllSettings()["indexer"]).Msg("Indexer settings")
 
-	messages := make(chan *types.Message, viper.GetInt("imap.queue"))
+	messages := make(chan *types.Message, viper.GetInt("imap.buffer"))
 
 	zinc, ctx := indexer.NewZinc(context.Background(), messages, indexer.ZincConfig{
-		Address:  viper.GetString("zinc.address"),
-		Username: viper.GetString("zinc.username"),
-		Password: viper.GetString("zinc.password"),
-		Index:    viper.GetString("zinc.index"),
+		Address:   viper.GetString("zinc.address"),
+		Username:  viper.GetString("zinc.username"),
+		Password:  viper.GetString("zinc.password"),
+		Index:     viper.GetString("zinc.index"),
+		BatchSize: int32(viper.GetInt("indexer.batch")),
 	})
+	wg := &sync.WaitGroup{}
+	wg.Add(2)
 
-	go zinc.IndexMails(ctx) // will wait on messages channel for new data and index when ready
+	go zinc.IndexMails(ctx, wg) // will wait on messages channel for new data and index when ready
 
-	imap.GetMails(messages, imap.ImapConfig{
+	go imap.GetMails(messages, wg, imap.ImapConfig{
 		Address:        viper.GetString("imap.address"),
 		Username:       viper.GetString("imap.username"),
 		Password:       viper.GetString("imap.password"),
 		MailBoxPattern: viper.GetString("imap.mailbox"),
 	})
+
+	wg.Wait()
 }

@@ -21,6 +21,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"io"
+	"sync"
 
 	"github.com/rs/zerolog/log"
 
@@ -36,7 +37,7 @@ type ImapConfig struct {
 	MailBoxPattern string
 }
 
-func GetMails(messages chan *types.Message, config ImapConfig) {
+func GetMails(messages chan *types.Message, wg *sync.WaitGroup, config ImapConfig) {
 
 	c, err := imapclient.DialTLS(config.Address, nil)
 	if err != nil {
@@ -118,4 +119,6 @@ func GetMails(messages chan *types.Message, config ImapConfig) {
 			messages <- message
 		}
 	}
+	close(messages)
+	wg.Done()
 }
