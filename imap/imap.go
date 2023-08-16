@@ -19,6 +19,7 @@ package imap
 import (
 	"bytes"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"io"
 	"sync"
@@ -38,21 +39,29 @@ type ImapConfig struct {
 	MailBoxPattern string
 }
 
-func GetMails(messages chan *types.Message, wg *sync.WaitGroup, config ImapConfig) {
-	defer wg.Done()
-
+func newClient(config ImapConfig) (*imapclient.Client, error) {
 	c, err := imapclient.DialTLS(config.Address, nil)
 	if err != nil {
-		log.Fatal().Err(err).Msg("cannot connect to IMAP server")
+		return nil, err
 	}
-	defer c.Close()
 
 	// Login
 	logincmd := c.Login(config.Username, config.Password)
 	if e := logincmd.Wait(); e != nil {
-		log.Fatal().Err(e).Msg("cannot login to IMAP server")
+		return nil, errors.Join(e, errors.New("cannot login to IMAP server"))
+	}
+	return c, err
+}
+
+func GetMails(messages chan *types.Message, wg *sync.WaitGroup, config ImapConfig) {
+	defer wg.Done()
+
+	c, err := newClient(config)
+	if err != nil {
+		log.Fatal().Err(err).Msg("cannot create IMAP clinet")
 	}
 	defer c.Logout()
+	defer c.Close()
 
 	// list mailboxes with given pattern and get messages count
 	listCmd := c.List("", config.MailBoxPattern, &imap.ListOptions{
@@ -80,7 +89,7 @@ func GetMails(messages chan *types.Message, wg *sync.WaitGroup, config ImapConfi
 	for {
 		for i := 0; i < workerCount; i++ {
 			lwg.Add(1)
-			go imapWorker(c, mboxes[i], messages, lwg)
+			go imapWorker(config, mboxes[i], messages, lwg)
 		}
 		mboxes = mboxes[workerCount:]
 		if len(mboxes) == 0 {
@@ -91,9 +100,16 @@ func GetMails(messages chan *types.Message, wg *sync.WaitGroup, config ImapConfi
 	close(messages)
 }
 
-func imapWorker(c *imapclient.Client, mbox *imap.ListData, messages chan *types.Message, wg *sync.WaitGroup) {
+func imapWorker(config ImapConfig, mbox *imap.ListData, messages chan *types.Message, wg *sync.WaitGroup) {
 	defer wg.Done()
 
+	c, err := newClient(config)
+	if err != nil {
+		log.Error().Err(err).Msg("cannot create IMAP client")
+		return
+	}
+	defer c.Logout()
+	defer c.Close()
 	log.Info().Str("mailbox", mbox.Mailbox).Msg("Parsing Mailbox")
 
 	seqSet := &imap.SeqSet{}
@@ -108,12 +124,13 @@ func imapWorker(c *imapclient.Client, mbox *imap.ListData, messages chan *types.
 	c.Select(mbox.Mailbox, nil)
 	fetchCmd := c.Fetch(*seqSet, fetchOptions)
 	defer fetchCmd.Close()
-
+	count := 0
 	for {
 		msg := fetchCmd.Next()
 		if msg == nil {
 			break
 		}
+		count += 1
 		message := &types.Message{}
 		for {
 			iteam := msg.Next()
@@ -142,4 +159,5 @@ func imapWorker(c *imapclient.Client, mbox *imap.ListData, messages chan *types.
 		log.Debug().Str("mailbox", mbox.Mailbox).Uint32("uid", message.UID).Str("subject", message.Envelope.Subject).Msg("Got Message")
 		messages <- message
 	}
+	log.Info().Str("mailbox", mbox.Mailbox).Int("count", count).Msg("Done")
 }
