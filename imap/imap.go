@@ -68,6 +68,7 @@ func GetMails(messages chan *types.Message, wg *sync.WaitGroup, config ImapConfi
 		ReturnStatus: &imap.StatusOptions{
 			NumMessages: true,
 			NumUnseen:   true,
+			UIDNext:     true,
 		}})
 	defer listCmd.Close()
 
@@ -77,26 +78,27 @@ func GetMails(messages chan *types.Message, wg *sync.WaitGroup, config ImapConfi
 	}
 
 	log.Info().Int("mailboxes", len(mboxes)).Msg("Mailboxes found")
-
-	lwg := &sync.WaitGroup{}
 	workerCount := viper.GetInt("indexer.workers")
-	// ensure we don't start more workers than mailboxes
-	if len(mboxes) < workerCount {
-		workerCount = len(mboxes)
-		log.Info().Int("workers", workerCount).Int("mailboxes", len(mboxes)).Msg("Reducing workers to match mailboxes")
-	}
-
 	for {
-		for i := 0; i < workerCount; i++ {
+		lwg := &sync.WaitGroup{}
+		// ensure we don't start more workers than remaining mailboxes
+		if len(mboxes) < workerCount {
+			workerCount = len(mboxes)
+			log.Info().Int("workers", workerCount).Int("mailboxes", len(mboxes)).Msg("Reducing workers to match mailboxes")
+		}
+		// start workers
+		for i := 0; i < workerCount && i != len(mboxes); i++ {
 			lwg.Add(1)
+			log.Debug().Int("i", i).Int("mboxes", len(mboxes)).Msg("Starting worker")
 			go imapWorker(config, mboxes[i], messages, lwg)
 		}
+		// resize mboxes slice
 		mboxes = mboxes[workerCount:]
 		if len(mboxes) == 0 {
 			break
 		}
+		lwg.Wait()
 	}
-	lwg.Wait()
 	close(messages)
 }
 
@@ -151,13 +153,21 @@ func imapWorker(config ImapConfig, mbox *imap.ListData, messages chan *types.Mes
 				message.Envelope = item.Envelope
 			}
 		}
-		bb := bytes.Buffer{}
-		bb.WriteString(message.Body)
-		h := sha256.Sum256(bb.Bytes())
-		message.Hash = fmt.Sprintf("%x", h)
+		if viper.GetBool("imap.useHash") {
+			message.Hash = hash(message.Envelope.Subject, message.Body)
+		}
 		message.MailBox = mbox.Mailbox
 		log.Debug().Str("mailbox", mbox.Mailbox).Uint32("uid", message.UID).Str("subject", message.Envelope.Subject).Msg("Got Message")
 		messages <- message
 	}
-	log.Info().Str("mailbox", mbox.Mailbox).Int("count", count).Msg("Done")
+	log.Info().Str("mailbox", mbox.Mailbox).Int("tot", int(*mbox.Status.NumMessages)).Int("parsed", count).Msg("Done")
+}
+
+func hash(s ...string) string {
+	bb := bytes.Buffer{}
+	for _, v := range s {
+		bb.WriteString(v)
+	}
+	h := sha256.Sum256(bb.Bytes())
+	return fmt.Sprintf("%x", h)
 }
