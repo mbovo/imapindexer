@@ -86,6 +86,7 @@ func init() {
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr}).With().Logger().Level(zerolog.InfoLevel)
 
 	viper.BindPFlags(rootCmd.PersistentFlags())
+	viper.BindPFlags(rootCmd.Flags())
 }
 
 // initConfig reads in config file and ENV variables if set.
