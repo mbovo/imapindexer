@@ -81,22 +81,22 @@ func GetMails(messages chan *types.Message, wg *sync.WaitGroup, config ImapConfi
 	workerCount := viper.GetInt("indexer.workers")
 	for {
 		lwg := &sync.WaitGroup{}
+		if len(mboxes) == 0 {
+			break
+		}
 		// ensure we don't start more workers than remaining mailboxes
 		if len(mboxes) < workerCount {
 			workerCount = len(mboxes)
 			log.Info().Int("workers", workerCount).Int("mailboxes", len(mboxes)).Msg("Reducing workers to match mailboxes")
 		}
 		// start workers
-		for i := 0; i < workerCount && i != len(mboxes); i++ {
+		for i := 0; i < workerCount; i++ {
 			lwg.Add(1)
-			log.Debug().Int("i", i).Int("mboxes", len(mboxes)).Msg("Starting worker")
+			log.Debug().Str("mailbox", mboxes[i].Mailbox).Int("i", i).Int("mboxes", len(mboxes)).Msg("Starting worker")
 			go imapWorker(config, mboxes[i], messages, lwg)
 		}
 		// resize mboxes slice
 		mboxes = mboxes[workerCount:]
-		if len(mboxes) == 0 {
-			break
-		}
 		lwg.Wait()
 	}
 	close(messages)

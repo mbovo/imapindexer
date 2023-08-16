@@ -40,7 +40,7 @@ func run() {
 
 	messages := make(chan *types.Message, viper.GetInt("imap.buffer"))
 
-	zinc, ctx := indexer.NewZinc(context.Background(), messages, indexer.ZincConfig{
+	zinc, ctx := indexer.NewZinc(context.Background(), indexer.ZincConfig{
 		Address:   viper.GetString("zinc.address"),
 		Username:  viper.GetString("zinc.username"),
 		Password:  viper.GetString("zinc.password"),
@@ -50,7 +50,7 @@ func run() {
 	wg := &sync.WaitGroup{}
 	wg.Add(2)
 
-	go zinc.IndexMails(ctx, wg) // will wait on messages channel for new data and index when ready
+	go zinc.IndexMails(ctx, messages, wg) // will wait on messages channel for new data and index when ready
 
 	go imap.GetMails(messages, wg, imap.ImapConfig{
 		Address:        viper.GetString("imap.address"),

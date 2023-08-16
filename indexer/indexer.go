@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"sync"
+	"time"
 
 	"github.com/mbovo/imapindexer/types"
 	"github.com/rs/zerolog/log"
@@ -28,7 +29,6 @@ import (
 
 type Zinc struct {
 	client *client.APIClient
-	buffer chan *types.Message
 	config ZincConfig
 }
 
@@ -40,7 +40,7 @@ type ZincConfig struct {
 	BatchSize int32
 }
 
-func NewZinc(ctx context.Context, buffer chan *types.Message, cfg ZincConfig) (*Zinc, context.Context) {
+func NewZinc(ctx context.Context, cfg ZincConfig) (*Zinc, context.Context) {
 	newCtx := context.WithValue(ctx, client.ContextBasicAuth, client.BasicAuth{
 		UserName: cfg.Username,
 		Password: cfg.Password,
@@ -54,7 +54,6 @@ func NewZinc(ctx context.Context, buffer chan *types.Message, cfg ZincConfig) (*
 
 	z := &Zinc{
 		client: client.NewAPIClient(config),
-		buffer: buffer,
 		config: cfg,
 	}
 
@@ -79,14 +78,17 @@ func msgToMap(msg *types.Message) map[string]interface{} {
 	return document
 }
 
-func (z *Zinc) IndexMails(ctx context.Context, wg *sync.WaitGroup) {
+func (z *Zinc) IndexMails(ctx context.Context, messages chan *types.Message, wg *sync.WaitGroup) {
 	var document map[string]interface{}
-
 	batch := []map[string]interface{}{}
-	for msg := range z.buffer {
+	log.Debug().Msg("Waiting for messages to index")
+	time.Sleep(time.Second)
+
+	for msg := range messages {
 
 		document = msgToMap(msg)
 		if document == nil {
+			log.Error().Msg("failed to convert message to map")
 			continue
 		}
 
