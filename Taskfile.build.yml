@@ -1,0 +1,19 @@
+# https://taskfile.dev
+
+version: '3'
+
+tasks:
+  default:
+    cmds:
+      - task -l
+    silent: true
+
+  all:
+    desc: Build all binaries
+    cmds:
+      - goreleaser build --snapshot --clean
+
+  clean:
+    desc: "Cleanup dist directory"
+    cmds:
+      - rm -rf dist

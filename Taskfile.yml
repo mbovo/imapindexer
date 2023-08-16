@@ -1,0 +1,71 @@
+# https://taskfile.dev
+
+version: '3'
+
+includes:
+  build: Taskfile.build.yml
+
+tasks:
+  default:
+    cmds:
+      - task -l
+    silent: true
+
+  check:
+    desc: Run all pre-commit hooks
+    cmds:
+      - pre-commit run -a
+
+  pre-commit:
+    cmds:
+      - pre-commit install
+    sources:
+      - .git/hooks/pre-commit
+      - .pre-commit-config.yaml
+    generates:
+      - .git/hooks/pre-commit
+    method: checksum
+
+  go-mod-download:
+    cmds:
+      - go mod tidy
+      - go mod verify
+    sources:
+      - go.mod
+      - go.sum
+    generates:
+      - go.sum
+    method: checksum
+
+  pre-commit-setup:
+    cmds:
+      - pip3 install pre-commit
+    status:
+      - which pre-commit
+
+
+  setup:
+    desc: Bootstrap of dev environment
+    preconditions:
+      - sh: "[ $(python3 --version | cut -d ' ' -f 2 | awk -F'.' '{print ($2 > 9) }') = 1 ]"
+        msg: "Required python version not found (>=3.10)"
+      - sh: "which go"
+        msg: "golang tools not found! (brew install golang)"
+    cmds:
+      - task: pre-commit-setup
+      - task: pre-commit
+      - task: go-mod-download
+
+  build:
+    desc: Build all binaries
+    cmds:
+      - task: build:all
+
+  cleanup:
+    desc: Cleanup all built binaries
+    cmds:
+      - rm -rf dist bin
+  test:
+    desc: Run all tests
+    cmds:
+      - task: test:all
